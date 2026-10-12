@@ -161,10 +161,35 @@
                 
                 <!-- 遊戲開始/結束覆蓋層 -->
                 <div id="gameOverlay" class="absolute inset-0 bg-[#5c4a3b]/40 backdrop-blur-[2px] flex flex-col items-center justify-center text-center p-6 text-white transition-all">
-                    <div class="bg-[#faf8f5] text-[#5c4a3b] p-6 rounded-2xl earthy-shadow max-w-sm w-full border border-[#e8e2d5]">
+                    <div class="bg-[#faf8f5] text-[#5c4a3b] p-6 rounded-2xl earthy-shadow max-w-md w-full border border-[#e8e2d5]">
                         <h3 id="overlayTitle" class="text-xl font-bold font-serif mb-2">準備好出發了嗎？</h3>
+                        
+                        <!-- 手勢方向盤操作圖解卡片 -->
+                        <div class="my-4 p-3 bg-[#f2ece1] rounded-xl border border-[#e2d9cc] text-left">
+                            <p class="text-xs font-semibold text-[#5c4a3b] mb-2 flex items-center gap-1.5">
+                                <span>🛞</span> 駕駛手勢姿勢指示（請如同雙手抓住方向盤）：
+                            </p>
+                            <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                                <div class="bg-white p-2 rounded-lg border border-[#e2d9cc]">
+                                    <div class="text-xl mb-1">↖️ 🛞</div>
+                                    <div class="font-bold text-[#c87d55]">左轉方向盤</div>
+                                    <div class="text-[10px] text-[#8c7a6b] mt-0.5">Class 1 (左轉)</div>
+                                </div>
+                                <div class="bg-white p-2 rounded-lg border border-[#e2d9cc]">
+                                    <div class="text-xl mb-1">⬆️ 🛞</div>
+                                    <div class="font-bold text-[#658c63]">雙手持平</div>
+                                    <div class="text-[10px] text-[#8c7a6b] mt-0.5">Class 2 (直行)</div>
+                                </div>
+                                <div class="bg-white p-2 rounded-lg border border-[#e2d9cc]">
+                                    <div class="text-xl mb-1">↗️ 🛞</div>
+                                    <div class="font-bold text-[#d9ab55]">右轉方向盤</div>
+                                    <div class="text-[10px] text-[#8c7a6b] mt-0.5">Class 3 (右轉)</div>
+                                </div>
+                            </div>
+                        </div>
+
                         <p id="overlayDesc" class="text-xs text-[#8c7a6b] mb-5 leading-relaxed">
-                            請先在左側載入模型並開啟鏡頭。確認鏡像畫面運作正常後，即可點擊下方按鈕開始遊戲！您也可以使用鍵盤左右鍵（← / →）輔助控制。
+                            請在鏡頭前伸出雙手，像**抓住方向盤一樣左右轉動**控制車輛。載入模型並開啟鏡頭後，點擊下方按鈕即可開始駕駛！
                         </p>
                         <button id="startBtn" onclick="startGame()" disabled class="w-full py-3 rounded-xl btn-earthy text-sm font-semibold opacity-50 cursor-not-allowed shadow-sm">
                             開始遊戲
@@ -177,7 +202,7 @@
             <div class="w-full flex flex-col sm:flex-row justify-between items-center gap-3 text-xs text-[#7a6b58] bg-[#f2ece1] p-3.5 rounded-xl border border-[#e2d9cc]">
                 <div class="flex items-center gap-2">
                     <span class="w-2 h-2 rounded-full bg-[#658c63]"></span>
-                    <span>AI 操控提示：身體或手勢向左/右傾斜對應車輛轉向。</span>
+                    <span>AI 操控提示：雙手像抓住方向盤一樣向左/右轉動來控制轉向。</span>
                 </div>
                 <div class="flex gap-2">
                     <span class="px-2 py-1 bg-white rounded border border-[#e2d9cc]">← 左轉</span>
@@ -469,7 +494,7 @@
             overlay.classList.remove('opacity-0', 'pointer-events-none');
 
             document.getElementById('overlayTitle').innerText = '旅程暫告一段落';
-            document.getElementById('overlayDesc').innerHTML = `您本次獲得了 <strong class="text-[#c87d55]">${score}</strong> 分！<br>森林的風景隨時歡迎您再次探索。`;
+            document.getElementById('overlayDesc').innerHTML = `您本次獲得了 <strong class="text-[#c87d55]">${score}</strong> 分！<br>雙手如同握著方向盤般轉動即可隨時再次出發。`;
             document.getElementById('startBtn').innerText = '重新開始';
         }
 
