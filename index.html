@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>森之漫遊：AI 姿態駕駛體驗</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- TensorFlow.js and Teachable Machine Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', 'Noto Serif TC', serif;
+            background-color: #f7f4ed;
+            color: #4a4238;
+        }
+        #webcamContainer {
+            transform: scaleX(-1);
+            -webkit-transform: scaleX(-1);
+        }
+        .mirror-video, #webcamContainer canvas, #webcamContainer video {
+            transform: scaleX(-1) !important;
+            -webkit-transform: scaleX(-1) !important;
+        }
+        .earthy-shadow {
+            box-shadow: 0 10px 25px -5px rgba(120, 100, 80, 0.1), 0 8px 10px -6px rgba(120, 100, 80, 0.1);
+        }
+        .btn-earthy {
+            background-color: #8c7355;
+            color: #fdfbf7;
+            transition: all 0.3s ease;
+        }
+        .btn-earthy:hover {
+            background-color: #6f5940;
+            transform: translateY(-1px);
+        }
+        .btn-secondary {
+            background-color: #d6ccbe;
+            color: #4a4238;
+            transition: all 0.3s ease;
+        }
+        .btn-secondary:hover {
+            background-color: #c4b9aa;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-between p-4 md:p-8">
+
+    <header class="w-full max-w-5xl text-center mb-6">
+        <div class="inline-block px-4 py-1.5 mb-3 rounded-full bg-[#e8e2d5] text-[#7a6b58] text-sm font-medium tracking-wide">
+            🌱 沉浸式手繪風格 AI 互動遊戲
+        </div>
+        <h1 class="text-3xl md:text-4xl font-bold font-serif text-[#5c4a3b] mb-2">森之漫遊：自然駕駛之旅</h1>
+        <p class="text-[#8c7a6b] text-sm md:text-base max-w-xl mx-auto">
+            透過鏡頭辨識您的手勢或動作（Class 1: 左轉、Class 2: 直行、Class 3: 右轉），在溫暖的大地風光中駕駛您的復古小車！
+        </p>
+    </header>
+
+    <main class="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        <!-- 左側面板：AI 模型與攝影機預覽 -->
+        <section class="lg:col-span-5 bg-[#faf8f5] rounded-2xl p-6 earthy-shadow border border-[#e8e2d5] flex flex-col gap-5">
+            <div>
+                <h2 class="text-lg font-serif font-semibold text-[#5c4a3b] mb-2 flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-[#a38a71]"></span>
+                    Teachable Machine 模型設定
+                </h2>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-medium text-[#7a6b58] mb-1">模型網址 (Model URL)</label>
+                        <input type="text" id="modelUrlInput" value="https://teachablemachine.withgoogle.com/models/e2loEUY_t/" 
+                            class="w-full px-3.5 py-2.5 rounded-xl bg-[#f2ece1] border border-[#e2d9cc] text-sm text-[#5c4a3b] focus:outline-none focus:ring-2 focus:ring-[#a38a71]">
+                    </div>
+                    <div class="flex gap-2">
+                        <button id="loadModelBtn" onclick="initModel()" class="flex-1 py-2.5 px-4 rounded-xl btn-earthy text-sm font-semibold shadow-sm">
+                            載入模型
+                        </button>
+                        <button id="toggleWebcamBtn" onclick="toggleWebcam()" disabled class="py-2.5 px-4 rounded-xl btn-secondary text-sm font-semibold opacity-50 cursor-not-allowed">
+                            開啟鏡頭
+                        </button>
+                    </div>
+                    <div id="modelStatus" class="text-xs text-[#8c7a6b] italic text-center py-1">
+                        狀態：尚未載入模型，請點擊上方按鈕。
+                    </div>
+                </div>
+            </div>
+
+            <!-- 攝影機與辨識機率區塊 -->
+            <div class="border-t border-[#e8e2d5] pt-5">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-sm font-semibold text-[#5c4a3b]">即時影像與辨識機率</h3>
+                    <span id="fpsCounter" class="text-xs px-2 py-0.5 rounded bg-[#f2ece1] text-[#7a6b58]">FPS: --</span>
+                </div>
+                
+                <div class="relative w-full aspect-video bg-[#eae4db] rounded-xl overflow-hidden mb-4 flex items-center justify-center border border-[#e2d9cc]">
+                    <div id="webcamContainer" class="w-full h-full flex items-center justify-center">
+                        <span class="text-xs text-[#a39785]">鏡頭尚未啟動</span>
+                    </div>
+                    <div id="predictionBadge" class="absolute bottom-3 left-3 px-3 py-1 bg-[#5c4a3b]/80 backdrop-blur-sm text-white text-xs rounded-lg font-medium shadow">
+                        目前判定：等待中...
+                    </div>
+                </div>
+
+                <!-- 類別長條圖 -->
+                <div class="space-y-2.5" id="labelContainer">
+                    <div>
+                        <div class="flex justify-between text-xs font-medium text-[#7a6b58] mb-1">
+                            <span>Class 1 (左轉)</span>
+                            <span id="prob1">0%</span>
+                        </div>
+                        <div class="w-full h-2.5 bg-[#f2ece1] rounded-full overflow-hidden">
+                            <div id="bar1" class="h-full bg-[#c87d55] rounded-full transition-all duration-100 w-0"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-xs font-medium text-[#7a6b58] mb-1">
+                            <span>Class 2 (直行)</span>
+                            <span id="prob2">0%</span>
+                        </div>
+                        <div class="w-full h-2.5 bg-[#f2ece1] rounded-full overflow-hidden">
+                            <div id="bar2" class="h-full bg-[#658c63] rounded-full transition-all duration-100 w-0"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-xs font-medium text-[#7a6b58] mb-1">
+                            <span>Class 3 (右轉)</span>
+                            <span id="prob3">0%</span>
+                        </div>
+                        <div class="w-full h-2.5 bg-[#f2ece1] rounded-full overflow-hidden">
+                            <div id="bar3" class="h-full bg-[#d9ab55] rounded-full transition-all duration-100 w-0"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 右側面板：開車小遊戲主畫面 -->
+        <section class="lg:col-span-7 bg-[#faf8f5] rounded-2xl p-6 earthy-shadow border border-[#e8e2d5] flex flex-col items-center">
+            <div class="w-full flex justify-between items-center mb-4">
+                <div>
+                    <h2 class="text-lg font-serif font-semibold text-[#5c4a3b]">森林駕駛挑戰</h2>
+                    <p class="text-xs text-[#8c7a6b]">避開三角錐，收集森林金幣！</p>
+                </div>
+                <div class="flex gap-4 text-sm font-semibold text-[#5c4a3b]">
+                    <div class="bg-[#f2ece1] px-3 py-1.5 rounded-xl border border-[#e2d9cc]">
+                        分數: <span id="scoreVal" class="text-[#c87d55]">0</span>
+                    </div>
+                    <div class="bg-[#f2ece1] px-3 py-1.5 rounded-xl border border-[#e2d9cc]">
+                        生命: <span id="livesVal" class="text-[#a35c5c]">❤️❤️❤️</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 遊戲 Canvas 容器 -->
+            <div class="relative w-full aspect-[4/3] bg-[#e4dbcc] rounded-2xl overflow-hidden earthy-shadow border-4 border-[#eae4db] mb-4">
+                <canvas id="gameCanvas" class="w-full h-full block"></canvas>
+                
+                <!-- 遊戲開始/結束覆蓋層 -->
+                <div id="gameOverlay" class="absolute inset-0 bg-[#5c4a3b]/40 backdrop-blur-[2px] flex flex-col items-center justify-center text-center p-6 text-white transition-all">
+                    <div class="bg-[#faf8f5] text-[#5c4a3b] p-6 rounded-2xl earthy-shadow max-w-sm w-full border border-[#e8e2d5]">
+                        <h3 id="overlayTitle" class="text-xl font-bold font-serif mb-2">準備好出發了嗎？</h3>
+                        <p id="overlayDesc" class="text-xs text-[#8c7a6b] mb-5 leading-relaxed">
+                            請先在左側載入模型並開啟鏡頭。確認鏡像畫面運作正常後，即可點擊下方按鈕開始遊戲！您也可以使用鍵盤左右鍵（← / →）輔助控制。
+                        </p>
+                        <button id="startBtn" onclick="startGame()" disabled class="w-full py-3 rounded-xl btn-earthy text-sm font-semibold opacity-50 cursor-not-allowed shadow-sm">
+                            開始遊戲
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 控制說明與手動操作 -->
+            <div class="w-full flex flex-col sm:flex-row justify-between items-center gap-3 text-xs text-[#7a6b58] bg-[#f2ece1] p-3.5 rounded-xl border border-[#e2d9cc]">
+                <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-[#658c63]"></span>
+                    <span>AI 操控提示：身體或手勢向左/右傾斜對應車輛轉向。</span>
+                </div>
+                <div class="flex gap-2">
+                    <span class="px-2 py-1 bg-white rounded border border-[#e2d9cc]">← 左轉</span>
+                    <span class="px-2 py-1 bg-white rounded border border-[#e2d9cc]">↑ 直行</span>
+                    <span class="px-2 py-1 bg-white rounded border border-[#e2d9cc]">→ 右轉</span>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="w-full max-w-5xl text-center mt-6 text-xs text-[#9c8c78]">
+        <p>© 2026 森之漫遊 AI 互動體驗 · 以溫暖大地色彩與手繪風格打造</p>
+    </footer>
+
+    <script>
+        // 全域變數
+        let model, webcam, maxPredictions;
+        let modelType = 'image';
+        let isModelLoaded = false;
+        let isWebcamActive = false;
+        let isGameRunning = false;
+        let isPredicting = false; // 防重複異步預測鎖定
+        let animationFrameId = null;
+        let predictionInterval = null;
+
+        // 遊戲狀態變數
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let score = 0;
+        let lives = 3;
+        let roadSpeed = 6; // 放慢初始道路前進速度（原 11）
+        let roadOffset = 0;
+
+        let player = {
+            x: 0,
+            y: 0,
+            width: 46,
+            height: 80,
+            targetX: 0,
+            speed: 6 // 調降車輛基礎轉向速度（原 12）
+        };
+
+        let obstacles = [];
+        let collectibles = [];
+        let sceneryItems = [];
+
+        let currentCommand = 'straight';
+        let lastPredictionTime = 0;
+
+        function resizeCanvas() {
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * window.devicePixelRatio;
+            canvas.height = rect.height * window.devicePixelRatio;
+            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+            
+            player.x = rect.width / 2 - player.width / 2;
+            player.targetX = player.x;
+            player.y = rect.height - 120;
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        window.addEventListener('load', () => {
+            resizeCanvas();
+            initScenery();
+        });
+
+        function initScenery() {
+            sceneryItems = [];
+            for (let i = 0; i < 10; i++) {
+                sceneryItems.push({
+                    x: Math.random() * 60 + 10,
+                    side: Math.random() > 0.5 ? 'left' : 'right',
+                    y: Math.random() * canvas.height,
+                    size: Math.random() * 20 + 25
+                });
+            }
+        }
+
+        async function initModel() {
+            const urlInput = document.getElementById('modelUrlInput').value.trim();
+            const statusEl = document.getElementById('modelStatus');
+            const loadBtn = document.getElementById('loadModelBtn');
+            
+            if (!urlInput) {
+                statusEl.innerText = '請輸入有效的模型網址！';
+                return;
+            }
+
+            statusEl.innerText = '模型載入中，請稍候...';
+            loadBtn.disabled = true;
+            loadBtn.classList.add('opacity-50');
+
+            try {
+                const modelURL = urlInput.endsWith('/') ? urlInput : urlInput + '/';
+                const checkpointURL = modelURL + 'model.json';
+                const metadataURL = modelURL + 'metadata.json';
+
+                const metadataResponse = await fetch(metadataURL);
+                const metadata = await metadataResponse.json();
+                
+                if (metadata.packageName && metadata.packageName.includes('pose') || metadata.modelType === 'POSE' || (metadata.labels && !metadata.imageSize)) {
+                    modelType = 'pose';
+                } else {
+                    modelType = 'image';
+                }
+
+                if (modelType === 'pose' || typeof tmPose !== 'undefined') {
+                    try {
+                        model = await tmPose.load(checkpointURL, metadataURL);
+                        modelType = 'pose';
+                    } catch (e) {
+                        model = await tmImage.load(checkpointURL, metadataURL);
+                        modelType = 'image';
+                    }
+                } else {
+                    model = await tmImage.load(checkpointURL, metadataURL);
+                    modelType = 'image';
+                }
+
+                maxPredictions = model.getTotalClasses();
+                isModelLoaded = true;
+                statusEl.innerText = `模型載入成功 (${modelType.toUpperCase()} 模式)！現在可以開啟鏡頭。`;
+                
+                const webcamBtn = document.getElementById('toggleWebcamBtn');
+                webcamBtn.disabled = false;
+                webcamBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                loadBtn.innerText = '模型已載入';
+            } catch (error) {
+                console.error(error);
+                statusEl.innerText = '載入失敗，請確認網址與網路連線。';
+                loadBtn.disabled = false;
+                loadBtn.classList.remove('opacity-50');
+            }
+        }
+
+        async function toggleWebcam() {
+            const webcamBtn = document.getElementById('toggleWebcamBtn');
+            const webcamContainer = document.getElementById('webcamContainer');
+
+            if (!isWebcamActive) {
+                try {
+                    const flip = true;
+                    webcam = new tmImage.Webcam(300, 300, flip); 
+                    await webcam.setup();
+                    await webcam.play();
+                    
+                    webcamContainer.innerHTML = '';
+                    webcam.canvas.classList.add('w-full', 'h-full', 'object-cover', 'mirror-video');
+                    webcamContainer.appendChild(webcam.canvas);
+
+                    isWebcamActive = true;
+                    webcamBtn.innerText = '關閉鏡頭';
+                    webcamBtn.classList.remove('btn-secondary');
+                    webcamBtn.classList.add('btn-earthy');
+
+                    const startBtn = document.getElementById('startBtn');
+                    startBtn.disabled = false;
+                    startBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+
+                    window.requestAnimationFrame(loopWebcam);
+                    
+                    if (predictionInterval) clearInterval(predictionInterval);
+                    // 設定穩定的 60ms 預測間隔 (約 16 FPS)，兼顧即時性與瀏覽器效能
+                    predictionInterval = setInterval(async () => {
+                        if (isWebcamActive && model && !isPredicting) {
+                            isPredicting = true;
+                            await predict();
+                            isPredicting = false;
+                        }
+                    }, 60);
+
+                } catch (error) {
+                    console.error(error);
+                    alert('無法存取網路攝影機，請檢查瀏覽器權限設定。');
+                }
+            } else {
+                if (predictionInterval) clearInterval(predictionInterval);
+                if (webcam) {
+                    await webcam.stop();
+                }
+                isWebcamActive = false;
+                webcamContainer.innerHTML = '<span class="text-xs text-[#a39785]">鏡頭已關閉</span>';
+                webcamBtn.innerText = '開啟鏡頭';
+                webcamBtn.classList.remove('btn-earthy');
+                webcamBtn.classList.add('btn-secondary');
+            }
+        }
+
+        function loopWebcam() {
+            if (!isWebcamActive) return;
+            webcam.update();
+            window.requestAnimationFrame(loopWebcam);
+        }
+
+        async function predict() {
+            if (!model || !isWebcamActive) return;
+            const now = performance.now();
+            
+            try {
+                let prediction;
+                if (modelType === 'pose') {
+                    const { posenetOutput } = await model.estimatePose(webcam.canvas);
+                    prediction = await model.predict(posenetOutput);
+                } else {
+                    prediction = await model.predict(webcam.canvas);
+                }
+                
+                let highestProb = 0;
+                let bestClassIndex = 0;
+
+                for (let i = 0; i < maxPredictions; i++) {
+                    const prob = prediction[i].probability;
+                    const percentage = Math.round(prob * 100);
+                    
+                    if (i === 0) {
+                        document.getElementById('prob1').innerText = percentage + '%';
+                        document.getElementById('bar1').style.width = percentage + '%';
+                    } else if (i === 1) {
+                        document.getElementById('prob2').innerText = percentage + '%';
+                        document.getElementById('bar2').style.width = percentage + '%';
+                    } else if (i === 2) {
+                        document.getElementById('prob3').innerText = percentage + '%';
+                        document.getElementById('bar3').style.width = percentage + '%';
+                    }
+
+                    if (prob > highestProb) {
+                        highestProb = prob;
+                        bestClassIndex = i;
+                    }
+                }
+
+                const badge = document.getElementById('predictionBadge');
+                if (highestProb > 0.55) {
+                    if (bestClassIndex === 0) {
+                        currentCommand = 'left';
+                        badge.innerText = '目前判定：⬅️ 左轉';
+                    } else if (bestClassIndex === 1) {
+                        currentCommand = 'straight';
+                        badge.innerText = '目前判定：⬆️ 直行';
+                    } else if (bestClassIndex === 2) {
+                        currentCommand = 'right';
+                        badge.innerText = '目前判定：➡️ 右轉';
+                    }
+                } else {
+                    currentCommand = 'straight';
+                    badge.innerText = '目前判定：中立/直行';
+                }
+
+                if (lastPredictionTime) {
+                    const fps = Math.round(1000 / (now - lastPredictionTime));
+                    document.getElementById('fpsCounter').innerText = `FPS: ${fps}`;
+                }
+                lastPredictionTime = now;
+            } catch (e) {
+                console.error("預測發生錯誤:", e);
+            }
+        }
+
+        // 鍵盤輔助控制
+        window.addEventListener('keydown', (e) => {
+            if (!isGameRunning) return;
+            if (e.key === 'ArrowLeft' || e.key === 'a') currentCommand = 'left';
+            if (e.key === 'ArrowRight' || e.key === 'd') currentCommand = 'right';
+            if (e.key === 'ArrowUp' || e.key === 'w') currentCommand = 'straight';
+        });
+
+        function startGame() {
+            score = 0;
+            lives = 3;
+            roadSpeed = 6; // 重設為舒適的初始速度
+            obstacles = [];
+            collectibles = [];
+            document.getElementById('scoreVal').innerText = score;
+            document.getElementById('livesVal').innerText = '❤️❤️❤️';
+
+            const overlay = document.getElementById('gameOverlay');
+            overlay.classList.add('opacity-0', 'pointer-events-none');
+            
+            isGameRunning = true;
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            gameLoop();
+        }
+
+        function gameOver() {
+            isGameRunning = false;
+            const overlay = document.getElementById('gameOverlay');
+            overlay.classList.remove('opacity-0', 'pointer-events-none');
+
+            document.getElementById('overlayTitle').innerText = '旅程暫告一段落';
+            document.getElementById('overlayDesc').innerHTML = `您本次獲得了 <strong class="text-[#c87d55]">${score}</strong> 分！<br>森林的風景隨時歡迎您再次探索。`;
+            document.getElementById('startBtn').innerText = '重新開始';
+        }
+
+        function gameLoop() {
+            if (!isGameRunning) return;
+
+            updateGame();
+            renderGame();
+
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        function updateGame() {
+            const rect = canvas.getBoundingClientRect();
+            const roadLeft = rect.width * 0.22;
+            const roadRight = rect.width * 0.78;
+
+            // 根據 AI 指令移動車輛目標位置（調降倍率，避免過度靈敏）
+            if (currentCommand === 'left') {
+                player.targetX -= player.speed * 1.0;
+            } else if (currentCommand === 'right') {
+                player.targetX += player.speed * 1.0;
+            }
+
+            if (player.targetX < roadLeft + 10) player.targetX = roadLeft + 10;
+            if (player.targetX > roadRight - player.width - 10) player.targetX = roadRight - player.width - 10;
+
+            // 柔和平滑移動（追隨係數調降至 0.12，轉向更順暢自然）
+            player.x += (player.targetX - player.x) * 0.12;
+            roadOffset = (roadOffset + roadSpeed) % 40;
+
+            // 隨機生成障礙物（已調低出現機率，從 0.024 降至 0.013）
+            if (Math.random() < 0.013) {
+                const spawnX = roadLeft + Math.random() * (roadRight - roadLeft - 35);
+                obstacles.push({
+                    x: spawnX,
+                    y: -60,
+                    width: 36,
+                    height: 42
+                });
+            }
+
+            // 隨機生成金幣
+            if (Math.random() < 0.030) {
+                const spawnX = roadLeft + Math.random() * (roadRight - roadLeft - 30);
+                collectibles.push({
+                    x: spawnX,
+                    y: -40,
+                    width: 30,
+                    height: 30,
+                    collected: false
+                });
+            }
+
+            // 更新障礙物
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                obstacles[i].y += roadSpeed;
+
+                if (
+                    player.x < obstacles[i].x + obstacles[i].width &&
+                    player.x + player.width > obstacles[i].x &&
+                    player.y < obstacles[i].y + obstacles[i].height &&
+                    player.y + player.height > obstacles[i].y
+                ) {
+                    lives--;
+                    updateLivesDisplay();
+                    obstacles.splice(i, 1);
+
+                    if (lives <= 0) {
+                        gameOver();
+                        return;
+                    }
+                    continue;
+                }
+
+                if (obstacles[i].y > rect.height) {
+                    obstacles.splice(i, 1);
+                    score += 5;
+                    document.getElementById('scoreVal').innerText = score;
+                }
+            }
+
+            // 更新金幣
+            for (let i = collectibles.length - 1; i >= 0; i--) {
+                collectibles[i].y += roadSpeed;
+
+                if (
+                    !collectibles[i].collected &&
+                    player.x < collectibles[i].x + collectibles[i].width &&
+                    player.x + player.width > collectibles[i].x &&
+                    player.y < collectibles[i].y + collectibles[i].height &&
+                    player.y + player.height > collectibles[i].y
+                ) {
+                    collectibles[i].collected = true;
+                    score += 25;
+                    document.getElementById('scoreVal').innerText = score;
+                    collectibles.splice(i, 1);
+                    continue;
+                }
+
+                if (collectibles[i].y > rect.height) {
+                    collectibles.splice(i, 1);
+                }
+            }
+
+            // 溫和緩慢提升難度，最高速度上限限制在 12
+            roadSpeed = Math.min(12, 6 + Math.floor(score / 200));
+        }
+
+        function updateLivesDisplay() {
+            let hearts = '';
+            for (let i = 0; i < lives; i++) hearts += '❤️';
+            document.getElementById('livesVal').innerText = hearts;
+        }
+
+        function renderGame() {
+            const rect = canvas.getBoundingClientRect();
+            ctx.clearRect(0, 0, rect.width, rect.height);
+
+            // 草地背景
+            ctx.fillStyle = '#d9d0be';
+            ctx.fillRect(0, 0, rect.width, rect.height);
+
+            const roadLeft = rect.width * 0.22;
+            const roadRight = rect.width * 0.78;
+            const roadWidth = roadRight - roadLeft;
+
+            // 道路本體
+            ctx.fillStyle = '#6b5e51';
+            ctx.fillRect(roadLeft, 0, roadWidth, rect.height);
+
+            // 兩旁邊線
+            ctx.fillStyle = '#a39785';
+            ctx.fillRect(roadLeft, 0, 6, rect.height);
+            ctx.fillRect(roadRight - 6, 0, 6, rect.height);
+
+            // 中央虛線
+            ctx.strokeStyle = '#e6dec8';
+            ctx.lineWidth = 4;
+            ctx.setLineDash([25, 25]);
+            ctx.lineDashOffset = -roadOffset;
+            ctx.beginPath();
+            ctx.moveTo(rect.width / 2, 0);
+            ctx.lineTo(rect.width / 2, rect.height);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // 樹木裝飾
+            sceneryItems.forEach(item => {
+                item.y += roadSpeed * 0.8;
+                if (item.y > rect.height) {
+                    item.y = -50;
+                    item.x = Math.random() * 60 + 10;
+                    item.side = Math.random() > 0.5 ? 'left' : 'right';
+                }
+
+                let drawX = item.side === 'left' ? item.x : rect.width - item.x;
+                ctx.fillStyle = '#556b4f';
+                ctx.beginPath();
+                ctx.arc(drawX, item.y, item.size / 2, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#826245';
+                ctx.fillRect(drawX - 3, item.y + (item.size / 3), 6, item.size / 2);
+            });
+
+            // 三角錐
+            obstacles.forEach(obs => {
+                ctx.save();
+                ctx.fillStyle = '#d96b43';
+                ctx.beginPath();
+                ctx.moveTo(obs.x + obs.width / 2, obs.y);
+                ctx.lineTo(obs.x + obs.width, obs.y + obs.height);
+                ctx.lineTo(obs.x, obs.y + obs.height);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.fillStyle = '#f7f4ed';
+                ctx.beginPath();
+                ctx.moveTo(obs.x + obs.width * 0.35, obs.y + obs.height * 0.45);
+                ctx.lineTo(obs.x + obs.width * 0.65, obs.y + obs.height * 0.45);
+                ctx.lineTo(obs.x + obs.width * 0.75, obs.y + obs.height * 0.7);
+                ctx.lineTo(obs.x + obs.width * 0.25, obs.y + obs.height * 0.7);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.fillStyle = '#8c5238';
+                ctx.beginPath();
+                ctx.roundRect(obs.x - 3, obs.y + obs.height - 5, obs.width + 6, 7, 3);
+                ctx.fill();
+                ctx.restore();
+            });
+
+            // 金幣
+            collectibles.forEach(col => {
+                ctx.save();
+                ctx.fillStyle = '#e6b84c';
+                ctx.beginPath();
+                ctx.arc(col.x + col.width/2, col.y + col.height/2, col.width/2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#b8860b';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                ctx.fillStyle = '#ffdf73';
+                ctx.beginPath();
+                ctx.arc(col.x + col.width/2, col.y + col.height/2, col.width/3, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#b8860b';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('$', col.x + col.width/2, col.y + col.height/2);
+                ctx.restore();
+            });
+
+            // 玩家車輛
+            ctx.save();
+            ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
+            
+            if (currentCommand === 'left') ctx.rotate(-0.08);
+            if (currentCommand === 'right') ctx.rotate(0.08);
+
+            ctx.fillStyle = '#b36b4a';
+            ctx.beginPath();
+            ctx.roundRect(-player.width / 2, -player.height / 2, player.width, player.height, 12);
+            ctx.fill();
+
+            ctx.fillStyle = '#e8dec9';
+            ctx.beginPath();
+            ctx.roundRect(-player.width / 2 + 6, -player.height / 4, player.width - 12, player.height / 2.2, 6);
+            ctx.fill();
+
+            ctx.fillStyle = '#f5e6ca';
+            ctx.fillRect(-player.width / 2 + 4, -player.height / 2 + 2, 8, 5);
+            ctx.fillRect(player.width / 2 - 12, -player.height / 2 + 2, 8, 5);
+
+            ctx.restore();
+        }
+    </script>
+</body>
+</html>
